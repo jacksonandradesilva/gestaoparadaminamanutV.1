@@ -1,0 +1,897 @@
+import { useEffect, useMemo, useState } from 'react';
+import { NavLink, Route, Routes } from 'react-router-dom';
+import { getState, saveHistoricoParadas, saveState } from './store';
+import { formatDateTime, formatMinutes, getDurationInMinutes } from './utils';
+
+const HISTORICO_OBSERVACOES_KEY = 'mina_historico_observacoes_v1';
+const OBSERVACOES_STORAGE_KEY = 'mina_relatorio_observacoes_turno_v1';
+
+function LinkButton({ to, children }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) => `btn-link${isActive ? ' active-link' : ''}`}
+      end={to === '/'}
+    >
+      {children}
+    </NavLink>
+  );
+}
+
+function Header({ title }) {
+  return (
+    <div className="page-header">
+      <h1>{title}</h1>
+      <img className="page-header-logo" src="/img/logo-header (1).png" alt="Logo" />
+    </div>
+  );
+}
+
+function DashboardPage() {
+  const [equipamentos, setEquipamentos] = useState([]);
+  const [historicoParadas, setHistoricoParadas] = useState([]);
+  const [editandoIndex, setEditandoIndex] = useState(null);
+  const [formData, setFormData] = useState({
+    nome: '',
+    status: '',
+    turno: '',
+    turma: '',
+    causa: '',
+    horaInicio: '',
+    horaFim: ''
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadState() {
+      const estado = await getState();
+      if (!active) {
+        return;
+      }
+
+      setEquipamentos(Array.isArray(estado.equipamentos) ? estado.equipamentos : []);
+      setHistoricoParadas(Array.isArray(estado.historicoParadas) ? estado.historicoParadas : []);
+    }
+
+    loadState();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function persist(nextEquipamentos, nextHistorico) {
+    await saveState({
+      equipamentos: nextEquipamentos,
+      historicoParadas: nextHistorico
+    });
+  }
+
+  function registrarHistoricoParada(equipamento, acao, baseHistorico) {
+    if (equipamento.status !== 'parado') {
+      return baseHistorico;
+    }
+
+    return [
+      {
+        idHistorico: Date.now(),
+        equipamentoId: equipamento.id,
+        nome: equipamento.nome,
+        status: equipamento.status,
+        turno: equipamento.turno,
+        turma: equipamento.turma,
+        causa: equipamento.causa,
+        horaInicio: equipamento.horaInicio,
+        horaFim: equipamento.horaFim,
+        dataHoraCadastro: equipamento.dataHoraCadastro,
+        acao,
+        dataHoraRegistro: formatDateTime(new Date())
+      },
+      ...baseHistorico
+    ];
+  }
+
+  function resetForm() {
+    setFormData({
+      nome: '',
+      status: '',
+      turno: '',
+      turma: '',
+      causa: '',
+      horaInicio: '',
+      horaFim: ''
+    });
+    setEditandoIndex(null);
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!formData.nome || !formData.status || !formData.turno || !formData.turma) {
+      return;
+    }
+
+    const nextId = equipamentos.length > 0 ? Math.max(...equipamentos.map((item) => item.id || 0)) + 1 : 1;
+    const dataHoraCadastro = formatDateTime(new Date());
+
+    const equipamentoObj = {
+      id: editandoIndex !== null ? equipamentos[editandoIndex].id : nextId,
+      nome: formData.nome.trim(),
+      status: formData.status,
+      turno: formData.turno,
+      turma: formData.turma,
+      causa: formData.causa.trim(),
+      horaInicio: formData.horaInicio,
+      horaFim: formData.horaFim,
+      dataHoraCadastro
+    };
+
+    let nextEquipamentos = [...equipamentos];
+    let nextHistorico = [...historicoParadas];
+
+    if (editandoIndex !== null) {
+      nextEquipamentos[editandoIndex] = equipamentoObj;
+      nextHistorico = registrarHistoricoParada(equipamentoObj, 'Edicao', nextHistorico);
+    } else {
+      nextEquipamentos = [...nextEquipamentos, equipamentoObj];
+      nextHistorico = registrarHistoricoParada(equipamentoObj, 'Cadastro', nextHistorico);
+    }
+
+    setEquipamentos(nextEquipamentos);
+    setHistoricoParadas(nextHistorico);
+    await persist(nextEquipamentos, nextHistorico);
+    resetForm();
+  }
+
+  function editarEquipamento(index) {
+    const equip = equipamentos[index];
+    if (!equip) {
+      return;
+    }
+
+    setEditandoIndex(index);
+    setFormData({
+      nome: equip.nome || '',
+      status: equip.status || '',
+      turno: equip.turno || '',
+      turma: equip.turma || '',
+      causa: equip.causa || '',
+      horaInicio: equip.horaInicio || '',
+      horaFim: equip.horaFim || ''
+    });
+  }
+
+  async function excluirEquipamento(index) {
+    const nextEquipamentos = equipamentos.filter((_, currentIndex) => currentIndex !== index);
+    setEquipamentos(nextEquipamentos);
+    await persist(nextEquipamentos, historicoParadas);
+  }
+
+  return (
+    <main className="page-shell">
+      <Header title="Status - Mina Manutencao" />
+
+      <div className="top-actions">
+        <LinkButton to="/historico">Ver Gestao de Parada da Manutencao</LinkButton>
+        <LinkButton to="/relatorio">Relatorio de Parada</LinkButton>
+        <LinkButton to="/historico-opcoes">Historico por Opcao</LinkButton>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <div className="form-field form-field-wide">
+          <label htmlFor="nomeEquip">Painel de Operacao:</label>
+          <input
+            id="nomeEquip"
+            value={formData.nome}
+            onChange={(event) => setFormData({ ...formData, nome: event.target.value })}
+            required
+          />
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="statusEquip">Status:</label>
+          <select
+            id="statusEquip"
+            value={formData.status}
+            onChange={(event) => setFormData({ ...formData, status: event.target.value })}
+            required
+          >
+            <option value="" disabled>Selecione o status</option>
+            <option value="parado">Parado</option>
+            <option value="liberado">Liberado</option>
+            <option value="standby">Standby</option>
+          </select>
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="turnoEquip">Turno:</label>
+          <select
+            id="turnoEquip"
+            value={formData.turno}
+            onChange={(event) => setFormData({ ...formData, turno: event.target.value })}
+            required
+          >
+            <option value="" disabled>Selecione o turno</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="turmaEquip">Turma:</label>
+          <select
+            id="turmaEquip"
+            value={formData.turma}
+            onChange={(event) => setFormData({ ...formData, turma: event.target.value })}
+            required
+          >
+            <option value="" disabled>Selecione a turma</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+
+        <div className="form-field form-field-wide">
+          <label htmlFor="causaParada">Equipamento/Causa:</label>
+          <input
+            id="causaParada"
+            value={formData.causa}
+            onChange={(event) => setFormData({ ...formData, causa: event.target.value })}
+            placeholder="Equipamento e causa (se aplicavel)"
+          />
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="horaInicio">Horario Inicio:</label>
+          <input
+            id="horaInicio"
+            type="time"
+            value={formData.horaInicio}
+            onChange={(event) => setFormData({ ...formData, horaInicio: event.target.value })}
+          />
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="horaFim">Horario Fim:</label>
+          <input
+            id="horaFim"
+            type="time"
+            value={formData.horaFim}
+            onChange={(event) => setFormData({ ...formData, horaFim: event.target.value })}
+          />
+        </div>
+
+        <div className="form-actions">
+          <button type="submit">{editandoIndex !== null ? 'Salvar edicao' : 'Cadastrar'}</button>
+          <button type="button" onClick={resetForm}>Limpar</button>
+        </div>
+      </form>
+
+      <h2>Status Mina</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Painel de Lavra</th>
+            <th>Status</th>
+            <th>Turno</th>
+            <th>Turma</th>
+            <th>Causa da Parada</th>
+            <th>Horario Inicio</th>
+            <th>Horario Fim</th>
+            <th>Data e Hora Cadastro</th>
+            <th>Acoes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {equipamentos.map((equip, idx) => (
+            <tr key={equip.id ?? idx}>
+              <td data-label="Painel de Lavra">{equip.nome}</td>
+              <td data-label="Status" className={`status-${equip.status}`}>{equip.status}</td>
+              <td data-label="Turno">{equip.turno || '-'}</td>
+              <td data-label="Turma">{equip.turma || '-'}</td>
+              <td data-label="Causa da Parada">{equip.causa || '-'}</td>
+              <td data-label="Horario Inicio">{equip.horaInicio || '-'}</td>
+              <td data-label="Horario Fim">{equip.horaFim || '-'}</td>
+              <td data-label="Data e Hora Cadastro">{equip.dataHoraCadastro || '-'}</td>
+              <td data-label="Acoes">
+                <div className="acoes-inline">
+                  <button className="btn editar" type="button" onClick={() => editarEquipamento(idx)}>Editar</button>
+                  <button className="btn excluir" type="button" onClick={() => excluirEquipamento(idx)}>Excluir</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </main>
+  );
+}
+
+function HistoricoPage() {
+  const [historicoParadas, setHistoricoParadas] = useState([]);
+  const [observacoes, setObservacoes] = useState('');
+  const [editId, setEditId] = useState(null);
+  const [editData, setEditData] = useState({
+    nome: '',
+    status: 'parado',
+    turno: 'A',
+    turma: 'A',
+    causa: '',
+    horaInicio: '',
+    horaFim: '',
+    acao: 'corretiva'
+  });
+
+  const totalHorasParadas = useMemo(() => {
+    const accumulated = historicoParadas.reduce((total, item) => total + getDurationInMinutes(item), 0);
+    return formatMinutes(accumulated);
+  }, [historicoParadas]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadHistorico() {
+      const state = await getState();
+      if (!active) {
+        return;
+      }
+
+      setHistoricoParadas(Array.isArray(state.historicoParadas) ? state.historicoParadas : []);
+    }
+
+    loadHistorico();
+
+    try {
+      setObservacoes(window.localStorage.getItem(HISTORICO_OBSERVACOES_KEY) || '');
+    } catch {
+      setObservacoes('');
+    }
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function limparFormularioEdicao() {
+    setEditId(null);
+    setEditData({
+      nome: '',
+      status: 'parado',
+      turno: 'A',
+      turma: 'A',
+      causa: '',
+      horaInicio: '',
+      horaFim: '',
+      acao: 'corretiva'
+    });
+  }
+
+  function abrirEdicao(item) {
+    setEditId(item.idHistorico);
+    setEditData({
+      nome: item.nome || '',
+      status: item.status || 'parado',
+      turno: item.turno || 'A',
+      turma: item.turma || 'A',
+      causa: item.causa || '',
+      horaInicio: item.horaInicio || '',
+      horaFim: item.horaFim || '',
+      acao: ['corretiva', 'preventiva', 'preditiva', 'programada'].includes(item.acao) ? item.acao : 'corretiva'
+    });
+  }
+
+  function salvarObservacoes() {
+    window.localStorage.setItem(HISTORICO_OBSERVACOES_KEY, observacoes);
+    window.alert('Observacoes salvas com sucesso.');
+  }
+
+  async function limparHistorico() {
+    setHistoricoParadas([]);
+    await saveHistoricoParadas([]);
+    limparFormularioEdicao();
+  }
+
+  async function excluirItem(id) {
+    const next = historicoParadas.filter((item) => item.idHistorico !== id);
+    setHistoricoParadas(next);
+    await saveHistoricoParadas(next);
+  }
+
+  async function salvarEdicao(event) {
+    event.preventDefault();
+
+    if (editId === null) {
+      return;
+    }
+
+    const next = historicoParadas.map((item) => {
+      if (item.idHistorico !== editId) {
+        return item;
+      }
+
+      return {
+        ...item,
+        ...editData,
+        nome: editData.nome.trim(),
+        causa: editData.causa.trim()
+      };
+    });
+
+    setHistoricoParadas(next);
+    await saveHistoricoParadas(next);
+    limparFormularioEdicao();
+  }
+
+  return (
+    <main className="page-shell">
+      <Header title="Gestao de Parada da Manutencao" />
+
+      <div className="page-actions">
+        <LinkButton to="/">Voltar ao painel</LinkButton>
+        <button type="button" className="btn perigo" onClick={limparHistorico}>Limpar historico</button>
+      </div>
+
+      {editId !== null && (
+        <form onSubmit={salvarEdicao}>
+          <div className="form-field">
+            <label>Painel</label>
+            <input
+              value={editData.nome}
+              onChange={(event) => setEditData({ ...editData, nome: event.target.value })}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>Status</label>
+            <select value={editData.status} onChange={(event) => setEditData({ ...editData, status: event.target.value })} required>
+              <option value="parado">Parado</option>
+              <option value="liberado">Liberado</option>
+              <option value="standby">Standby</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Turno</label>
+            <select value={editData.turno} onChange={(event) => setEditData({ ...editData, turno: event.target.value })} required>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Turma</label>
+            <select value={editData.turma} onChange={(event) => setEditData({ ...editData, turma: event.target.value })} required>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+          <div className="form-field form-field-wide">
+            <label>Equipe de Manutencao</label>
+            <input
+              value={editData.causa}
+              onChange={(event) => setEditData({ ...editData, causa: event.target.value })}
+            />
+          </div>
+          <div className="form-field">
+            <label>Inicio</label>
+            <input
+              type="time"
+              value={editData.horaInicio}
+              onChange={(event) => setEditData({ ...editData, horaInicio: event.target.value })}
+            />
+          </div>
+          <div className="form-field">
+            <label>Fim</label>
+            <input
+              type="time"
+              value={editData.horaFim}
+              onChange={(event) => setEditData({ ...editData, horaFim: event.target.value })}
+            />
+          </div>
+          <div className="form-field">
+            <label>Tipo de Manutencao</label>
+            <select value={editData.acao} onChange={(event) => setEditData({ ...editData, acao: event.target.value })} required>
+              <option value="corretiva">Corretiva</option>
+              <option value="preventiva">Preventiva</option>
+              <option value="preditiva">Preditiva</option>
+              <option value="programada">Programada</option>
+            </select>
+          </div>
+          <div className="form-actions">
+            <button type="submit">Salvar edicao</button>
+            <button type="button" className="btn secundario" onClick={limparFormularioEdicao}>Cancelar</button>
+          </div>
+        </form>
+      )}
+
+      <section className="summary-cards">
+        <article className="card observacoes-card">
+          <span>Observacoes</span>
+          <textarea
+            rows="4"
+            placeholder="Digite observacoes da gestao de parada da manutencao..."
+            value={observacoes}
+            onChange={(event) => setObservacoes(event.target.value)}
+          />
+          <button type="button" onClick={salvarObservacoes}>Salvar observacoes</button>
+        </article>
+        <article className="card">
+          <span>Tempo total de parada</span>
+          <strong>{totalHorasParadas}</strong>
+        </article>
+      </section>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Painel</th>
+            <th>Status</th>
+            <th>Turno</th>
+            <th>Turma</th>
+            <th>Equipe de Manutencao</th>
+            <th>Inicio</th>
+            <th>Fim</th>
+            <th>Tipo de Manutencao</th>
+            <th>Registro</th>
+            <th>Acoes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {historicoParadas.map((item) => (
+            <tr key={item.idHistorico}>
+              <td data-label="Painel">{item.nome || '-'}</td>
+              <td data-label="Status" className={`${item.status ? `status-${item.status}` : ''} ${item.status === 'parado' ? 'status-highlight' : ''}`.trim()}>
+                {item.status || '-'}
+              </td>
+              <td data-label="Turno">{item.turno || '-'}</td>
+              <td data-label="Turma">{item.turma || '-'}</td>
+              <td data-label="Equipe de Manutencao">{item.causa || '-'}</td>
+              <td data-label="Inicio">{item.horaInicio || '-'}</td>
+              <td data-label="Fim">{item.horaFim || '-'}</td>
+              <td data-label="Tipo de Manutencao">{item.acao || '-'}</td>
+              <td data-label="Registro">{item.dataHoraRegistro || '-'}</td>
+              <td data-label="Acoes">
+                <div className="acoes-inline">
+                  <button className="btn editar" type="button" onClick={() => abrirEdicao(item)}>Editar</button>
+                  <button className="btn excluir" type="button" onClick={() => excluirItem(item.idHistorico)}>Excluir</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {historicoParadas.length === 0 && <div className="empty-state">Nenhuma parada registrada.</div>}
+    </main>
+  );
+}
+
+function RelatorioPage() {
+  const [historicoParadas, setHistoricoParadas] = useState([]);
+  const [turno, setTurno] = useState('A');
+  const [turma, setTurma] = useState('A');
+  const [liderTecnico, setLiderTecnico] = useState('');
+  const [supervisor, setSupervisor] = useState('');
+  const [equipeManutencao, setEquipeManutencao] = useState('');
+  const [observacao, setObservacao] = useState('');
+
+  const tempoTotal = useMemo(() => {
+    const totalMin = historicoParadas.reduce((total, item) => total + getDurationInMinutes(item), 0);
+    return formatMinutes(totalMin);
+  }, [historicoParadas]);
+
+  function getObservacoesTurno() {
+    try {
+      const raw = window.localStorage.getItem(OBSERVACOES_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function getObservacaoKey(currentTurno, currentTurma) {
+    return `${currentTurno}_${currentTurma}`;
+  }
+
+  function carregarObservacao(turnoValue, turmaValue) {
+    const observacoes = getObservacoesTurno();
+    const key = getObservacaoKey(turnoValue, turmaValue);
+    const registro = observacoes[key] || {};
+
+    if (typeof registro === 'string') {
+      setObservacao(registro);
+      setLiderTecnico('');
+      setSupervisor('');
+      setEquipeManutencao('');
+      return;
+    }
+
+    setObservacao(registro.texto || '');
+    setLiderTecnico(registro.liderTecnico || '');
+    setSupervisor(registro.supervisor || '');
+    setEquipeManutencao(registro.equipeManutencao || '');
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRelatorio() {
+      const state = await getState();
+      if (!active) {
+        return;
+      }
+
+      setHistoricoParadas(Array.isArray(state.historicoParadas) ? state.historicoParadas : []);
+      carregarObservacao('A', 'A');
+    }
+
+    loadRelatorio();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    carregarObservacao(turno, turma);
+  }, [turno, turma]);
+
+  function salvarObservacao(event) {
+    event.preventDefault();
+    const observacoes = getObservacoesTurno();
+    const key = getObservacaoKey(turno, turma);
+
+    observacoes[key] = {
+      texto: observacao.trim(),
+      liderTecnico: liderTecnico.trim(),
+      supervisor: supervisor.trim(),
+      equipeManutencao: equipeManutencao.trim()
+    };
+
+    window.localStorage.setItem(OBSERVACOES_STORAGE_KEY, JSON.stringify(observacoes));
+    window.alert('Observacao do turno/turma salva com sucesso.');
+  }
+
+  return (
+    <main className="page-shell">
+      <Header title="Relatorio de Parada Manutencao Mina" />
+
+      <div className="page-actions">
+        <LinkButton to="/">Voltar ao painel</LinkButton>
+      </div>
+
+      <form onSubmit={salvarObservacao}>
+        <div className="form-field">
+          <label>Turno</label>
+          <select value={turno} onChange={(event) => setTurno(event.target.value)} required>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div className="form-field">
+          <label>Turma</label>
+          <select value={turma} onChange={(event) => setTurma(event.target.value)} required>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Nome do Lider Tecnico</label>
+          <input value={liderTecnico} onChange={(event) => setLiderTecnico(event.target.value)} />
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Nome do Supervisor</label>
+          <input value={supervisor} onChange={(event) => setSupervisor(event.target.value)} />
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Equipe de Manutencao</label>
+          <input value={equipeManutencao} onChange={(event) => setEquipeManutencao(event.target.value)} />
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Observacao do turno</label>
+          <textarea rows="3" value={observacao} onChange={(event) => setObservacao(event.target.value)} />
+        </div>
+        <div className="form-actions">
+          <button type="submit">Salvar observacao</button>
+        </div>
+      </form>
+
+      <section className="summary-cards">
+        <article className="card">
+          <span>Tempo total de parada (Gestao de Parada da Manutencao)</span>
+          <strong>{tempoTotal}</strong>
+        </article>
+      </section>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Painel</th>
+            <th>Status</th>
+            <th>Turno</th>
+            <th>Turma</th>
+            <th>Equipe de Manutencao</th>
+            <th>Inicio</th>
+            <th>Fim</th>
+            <th>Cadastro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {historicoParadas.map((item) => (
+            <tr key={item.idHistorico}>
+              <td data-label="Painel">{item.nome || '-'}</td>
+              <td data-label="Status">{item.status || '-'}</td>
+              <td data-label="Turno">{item.turno || '-'}</td>
+              <td data-label="Turma">{item.turma || '-'}</td>
+              <td data-label="Equipe de Manutencao">{item.causa || '-'}</td>
+              <td data-label="Inicio">{item.horaInicio || '-'}</td>
+              <td data-label="Fim">{item.horaFim || '-'}</td>
+              <td data-label="Cadastro">{item.dataHoraCadastro || item.dataHoraRegistro || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {historicoParadas.length === 0 && <div className="empty-state">Nenhuma parada registrada.</div>}
+    </main>
+  );
+}
+
+function HistoricoOpcoesPage() {
+  const [historicoCompleto, setHistoricoCompleto] = useState([]);
+  const [filtroNome, setFiltroNome] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroTurno, setFiltroTurno] = useState('');
+  const [filtroTurma, setFiltroTurma] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadHistoricoCompleto() {
+      const state = await getState();
+      if (!active) {
+        return;
+      }
+
+      setHistoricoCompleto(Array.isArray(state.historicoParadas) ? state.historicoParadas : []);
+    }
+
+    loadHistoricoCompleto();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filtrados = useMemo(() => {
+    const nome = filtroNome.trim().toLowerCase();
+
+    return historicoCompleto.filter((item) => {
+      const matchNome = !nome || (item.nome || '').toLowerCase().includes(nome);
+      const matchStatus = !filtroStatus || item.status === filtroStatus;
+      const matchTurno = !filtroTurno || item.turno === filtroTurno;
+      const matchTurma = !filtroTurma || item.turma === filtroTurma;
+      return matchNome && matchStatus && matchTurno && matchTurma;
+    });
+  }, [filtroNome, filtroStatus, filtroTurno, filtroTurma, historicoCompleto]);
+
+  const totalHorarioFiltrado = useMemo(() => {
+    const totalMin = historicoCompleto.reduce((total, item) => total + getDurationInMinutes(item), 0);
+    return formatMinutes(totalMin);
+  }, [historicoCompleto]);
+
+  const totalHorarioPainel = useMemo(() => {
+    const nome = filtroNome.trim().toLowerCase();
+    if (!nome) {
+      return '00:00';
+    }
+
+    const itensDoPainel = historicoCompleto.filter((item) => (item.nome || '').toLowerCase().includes(nome));
+    const totalMin = itensDoPainel.reduce((total, item) => total + getDurationInMinutes(item), 0);
+    return formatMinutes(totalMin);
+  }, [filtroNome, historicoCompleto]);
+
+  return (
+    <main className="page-shell">
+      <Header title="Historico por Opcao" />
+
+      <div className="page-actions">
+        <LinkButton to="/">Voltar ao painel</LinkButton>
+      </div>
+
+      <section className="filter-bar">
+        <input
+          type="text"
+          placeholder="Filtrar por painel"
+          value={filtroNome}
+          onChange={(event) => setFiltroNome(event.target.value)}
+        />
+        <select value={filtroStatus} onChange={(event) => setFiltroStatus(event.target.value)}>
+          <option value="">Todos os status</option>
+          <option value="parado">Parado</option>
+          <option value="liberado">Liberado</option>
+          <option value="standby">Standby</option>
+        </select>
+        <select value={filtroTurno} onChange={(event) => setFiltroTurno(event.target.value)}>
+          <option value="">Todos os turnos</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+        <select value={filtroTurma} onChange={(event) => setFiltroTurma(event.target.value)}>
+          <option value="">Todas as turmas</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+      </section>
+
+      <section className="summary-cards">
+        <article className="card">
+          <span>Horario total das paradas</span>
+          <strong>{totalHorarioFiltrado}</strong>
+        </article>
+        <article className="card">
+          <span>Total do painel pesquisado</span>
+          <strong>{totalHorarioPainel}</strong>
+        </article>
+      </section>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Painel</th>
+            <th>Status</th>
+            <th>Turno</th>
+            <th>Turma</th>
+            <th>Equipe Mecanica</th>
+            <th>Inicio</th>
+            <th>Fim</th>
+            <th>Registro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtrados.map((item) => (
+            <tr key={item.idHistorico}>
+              <td data-label="Painel">{item.nome || '-'}</td>
+              <td data-label="Status">{item.status || '-'}</td>
+              <td data-label="Turno">{item.turno || '-'}</td>
+              <td data-label="Turma">{item.turma || '-'}</td>
+              <td data-label="Equipe Mecanica">{item.causa || '-'}</td>
+              <td data-label="Inicio">{item.horaInicio || '-'}</td>
+              <td data-label="Fim">{item.horaFim || '-'}</td>
+              <td data-label="Registro">{item.dataHoraRegistro || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {filtrados.length === 0 && <div className="empty-state">Nenhum item encontrado para o filtro atual.</div>}
+    </main>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<DashboardPage />} />
+      <Route path="/historico" element={<HistoricoPage />} />
+      <Route path="/relatorio" element={<RelatorioPage />} />
+      <Route path="/historico-opcoes" element={<HistoricoOpcoesPage />} />
+    </Routes>
+  );
+}
