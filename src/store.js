@@ -4,7 +4,18 @@ const STORAGE_KEY = 'mina_status_store_v1';
 const TABLE_NAME = 'app_state';
 const STATE_ID = 'global';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+function normalizeSupabaseUrl(url) {
+  if (!url) {
+    return '';
+  }
+
+  return url
+    .trim()
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/$/, '');
+}
+
+const SUPABASE_URL = normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL);
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const hasRemoteConfig = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
