@@ -31,6 +31,12 @@ No projeto da Vercel, adicione as mesmas variaveis de ambiente:
 
 Depois faca novo deploy.
 
+## Importante
+- O deploy publicado no Vercel usa o app React em `src/` com o `index.html` da raiz como entrada.
+- Os arquivos HTML antigos da raiz (`historico.html`, `historico_opcoes.html`, `relatorio.html`) nao fazem parte do build atual.
+- Se voce alterar esses arquivos legados, a mudanca nao vai aparecer no site publicado.
+- Para mudar o site que vai para o Vercel, atualize os arquivos em `src/` e rode `npm run build`.
+
 ## Observacao
 - Se as variaveis nao estiverem definidas, o app usa localStorage como fallback.
 - Com variaveis definidas, os dados sao persistidos no Supabase e funcionam em qualquer dispositivo.
