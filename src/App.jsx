@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { getState, saveHistoricoParadas, saveState } from './store';
+import { getRelatorioTurnosNotas, getState, saveHistoricoParadas, saveRelatorioTurnosNotas, saveState } from './store';
 import { formatDateTime, formatMinutes, getDurationInMinutes } from './utils';
 
 const HISTORICO_OBSERVACOES_KEY = 'mina_historico_observacoes_v1';
@@ -175,7 +175,9 @@ function DashboardPage() {
       <div className="top-actions">
         <LinkButton to="/historico">Ver Gestao de Parada da Manutencao</LinkButton>
         <LinkButton to="/relatorio">Relatorio de Parada</LinkButton>
+        <LinkButton to="/relatorio-turnos">Relatorio por Turno</LinkButton>
         <LinkButton to="/historico-opcoes">Historico por Opcao</LinkButton>
+        <LinkButton to="/dashboard-turnos">Dashboard por Turno</LinkButton>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -688,7 +690,7 @@ function RelatorioPage() {
           </select>
         </div>
         <div className="form-field form-field-wide">
-          <label>Nome do Lider Tecnico</label>
+          <label>Lider Tecnico</label>
           <input value={liderTecnico} onChange={(event) => setLiderTecnico(event.target.value)} />
         </div>
         <div className="form-field form-field-wide">
@@ -885,13 +887,383 @@ function HistoricoOpcoesPage() {
   );
 }
 
+function DashboardTurnosPage() {
+  const [historicoParadas, setHistoricoParadas] = useState([]);
+  const [filtroTurno, setFiltroTurno] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadDashboard() {
+      const state = await getState();
+      if (!active) {
+        return;
+      }
+
+      setHistoricoParadas(Array.isArray(state.historicoParadas) ? state.historicoParadas : []);
+    }
+
+    loadDashboard();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const turnos = ['A', 'B', 'C', 'D'];
+
+  const resumoTurnos = useMemo(() => {
+    const base = turnos.reduce((acc, turno) => {
+      acc[turno] = {
+        quantidade: 0,
+        minutos: 0
+      };
+      return acc;
+    }, {});
+
+    historicoParadas.forEach((item) => {
+      if (!base[item.turno]) {
+        return;
+      }
+
+      base[item.turno].quantidade += 1;
+      base[item.turno].minutos += getDurationInMinutes(item);
+    });
+
+    return base;
+  }, [historicoParadas]);
+
+  const totalMinutos = useMemo(() => {
+    return historicoParadas.reduce((total, item) => total + getDurationInMinutes(item), 0);
+  }, [historicoParadas]);
+
+  const itensFiltrados = useMemo(() => {
+    if (!filtroTurno) {
+      return historicoParadas;
+    }
+
+    return historicoParadas.filter((item) => item.turno === filtroTurno);
+  }, [filtroTurno, historicoParadas]);
+
+  return (
+    <main className="page-shell">
+      <Header title="Dashboard de Paradas por Turno" />
+
+      <div className="page-actions">
+        <LinkButton to="/">Voltar ao painel</LinkButton>
+      </div>
+
+      <section className="summary-cards">
+        <article className="card">
+          <span>Horario total de parada</span>
+          <strong>{formatMinutes(totalMinutos)}</strong>
+        </article>
+        <article className="card">
+          <span>Total de registros</span>
+          <strong>{historicoParadas.length}</strong>
+        </article>
+      </section>
+
+      <h2>Resumo por turno</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Turno</th>
+            <th>Total de paradas</th>
+            <th>Horario acumulado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {turnos.map((turno) => (
+            <tr key={turno}>
+              <td data-label="Turno">{turno}</td>
+              <td data-label="Total de paradas">{resumoTurnos[turno].quantidade}</td>
+              <td data-label="Horario acumulado">{formatMinutes(resumoTurnos[turno].minutos)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Detalhes das paradas</h2>
+      <section className="filter-bar dashboard-filter-bar">
+        <select value={filtroTurno} onChange={(event) => setFiltroTurno(event.target.value)}>
+          <option value="">Todos os turnos</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+      </section>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Painel</th>
+            <th>Status</th>
+            <th>Turno</th>
+            <th>Turma</th>
+            <th>Inicio</th>
+            <th>Fim</th>
+            <th>Duracao</th>
+            <th>Registro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {itensFiltrados.map((item) => (
+            <tr key={item.idHistorico}>
+              <td data-label="Painel">{item.nome || '-'}</td>
+              <td data-label="Status">{item.status || '-'}</td>
+              <td data-label="Turno">{item.turno || '-'}</td>
+              <td data-label="Turma">{item.turma || '-'}</td>
+              <td data-label="Inicio">{item.horaInicio || '-'}</td>
+              <td data-label="Fim">{item.horaFim || '-'}</td>
+              <td data-label="Duracao">{formatMinutes(getDurationInMinutes(item))}</td>
+              <td data-label="Registro">{item.dataHoraRegistro || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {itensFiltrados.length === 0 && <div className="empty-state">Nenhuma parada registrada para o filtro atual.</div>}
+    </main>
+  );
+}
+
+function RelatorioPorTurnoPage() {
+  const [historicoParadas, setHistoricoParadas] = useState([]);
+  const [turnoAtivo, setTurnoAtivo] = useState('A');
+  const [notasTurno, setNotasTurno] = useState({});
+  const [turmaOpcional, setTurmaOpcional] = useState('A');
+  const [liderTecnico, setLiderTecnico] = useState('');
+  const [supervisor, setSupervisor] = useState('');
+  const [equipeManutencao, setEquipeManutencao] = useState('');
+  const [breveRelato, setBreveRelato] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRelatorioTurnos() {
+      const [state, notas] = await Promise.all([
+        getState(),
+        getRelatorioTurnosNotas()
+      ]);
+
+      if (!active) {
+        return;
+      }
+
+      setHistoricoParadas(Array.isArray(state.historicoParadas) ? state.historicoParadas : []);
+      setNotasTurno(notas);
+    }
+
+    loadRelatorioTurnos();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function carregarNotasDoTurno(turno, notas) {
+    const registro = notas[turno] || {};
+    setTurmaOpcional(registro.turmaOpcional || 'A');
+    setLiderTecnico(registro.liderTecnico || '');
+    setSupervisor(registro.supervisor || '');
+    setEquipeManutencao(registro.equipeManutencao || '');
+    setBreveRelato(registro.breveRelato || '');
+  }
+
+  useEffect(() => {
+    carregarNotasDoTurno(turnoAtivo, notasTurno);
+  }, [turnoAtivo, notasTurno]);
+
+  async function salvarNotasTurno(event) {
+    event.preventDefault();
+
+    const nextNotas = {
+      ...notasTurno,
+      [turnoAtivo]: {
+      turmaOpcional,
+      liderTecnico: liderTecnico.trim(),
+      supervisor: supervisor.trim(),
+      equipeManutencao: equipeManutencao.trim(),
+      breveRelato: breveRelato.trim()
+      }
+    };
+
+    setNotasTurno(nextNotas);
+    await saveRelatorioTurnosNotas(nextNotas);
+    window.alert(`Informacoes do turno ${turnoAtivo} salvas com sucesso.`);
+  }
+
+  async function limparNotasTurno() {
+    const nextNotas = { ...notasTurno };
+    delete nextNotas[turnoAtivo];
+
+    setNotasTurno(nextNotas);
+    await saveRelatorioTurnosNotas(nextNotas);
+    setTurmaOpcional('A');
+    setLiderTecnico('');
+    setSupervisor('');
+    setEquipeManutencao('');
+    setBreveRelato('');
+    window.alert(`Informacoes do turno ${turnoAtivo} removidas.`);
+  }
+
+  const turnos = ['A', 'B', 'C', 'D'];
+
+  const resumoPorTurno = useMemo(() => {
+    const base = {
+      A: { quantidade: 0, minutos: 0 },
+      B: { quantidade: 0, minutos: 0 },
+      C: { quantidade: 0, minutos: 0 },
+      D: { quantidade: 0, minutos: 0 }
+    };
+
+    historicoParadas.forEach((item) => {
+      if (!base[item.turno]) {
+        return;
+      }
+
+      base[item.turno].quantidade += 1;
+      base[item.turno].minutos += getDurationInMinutes(item);
+    });
+
+    return base;
+  }, [historicoParadas]);
+
+  const registrosTurnoAtivo = useMemo(() => {
+    return historicoParadas.filter((item) => item.turno === turnoAtivo);
+  }, [historicoParadas, turnoAtivo]);
+
+  return (
+    <main className="page-shell">
+      <Header title="Relatorio de Parada por Turno" />
+
+      <div className="page-actions">
+        <LinkButton to="/">Voltar ao painel</LinkButton>
+      </div>
+
+      <section className="turno-tabs" aria-label="Selecao de turno">
+        {turnos.map((turno) => (
+          <button
+            key={turno}
+            type="button"
+            className={`btn turno-tab-btn${turnoAtivo === turno ? ' active' : ''}`}
+            onClick={() => setTurnoAtivo(turno)}
+          >
+            Turno {turno}
+          </button>
+        ))}
+      </section>
+
+      <form onSubmit={salvarNotasTurno}>
+        <div className="form-field">
+          <label>Turma</label>
+          <select value={turmaOpcional} onChange={(event) => setTurmaOpcional(event.target.value)}>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+            <option value="E">E</option>
+          </select>
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Lider Tecnico</label>
+          <input
+            value={liderTecnico}
+            onChange={(event) => setLiderTecnico(event.target.value)}
+            placeholder="Nome do lider tecnico do turno"
+          />
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Supervisor</label>
+          <input
+            value={supervisor}
+            onChange={(event) => setSupervisor(event.target.value)}
+            placeholder="Digite nome do Supervisor de Manutencao"
+          />
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Equipe de Manutencao</label>
+          <input
+            value={equipeManutencao}
+            onChange={(event) => setEquipeManutencao(event.target.value)}
+            placeholder="Equipe de manutencao"
+          />
+        </div>
+        <div className="form-field form-field-wide">
+          <label>Descricao do Turno</label>
+          <textarea
+            rows="3"
+            value={breveRelato}
+            onChange={(event) => setBreveRelato(event.target.value)}
+            placeholder="Escreva a descricao do turno"
+          />
+        </div>
+        <div className="form-actions">
+          <button type="submit">Salvar informacoes do turno {turnoAtivo}</button>
+          <button type="button" className="btn secundario" onClick={limparNotasTurno}>Limpar informacoes do turno {turnoAtivo}</button>
+        </div>
+      </form>
+
+      <section className="summary-cards">
+        <article className="card">
+          <span>Tempo total de parada - Turno {turnoAtivo}</span>
+          <strong>{formatMinutes(resumoPorTurno[turnoAtivo].minutos)}</strong>
+        </article>
+        <article className="card">
+          <span>Total de paradas - Turno {turnoAtivo}</span>
+          <strong>{resumoPorTurno[turnoAtivo].quantidade}</strong>
+        </article>
+      </section>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Painel</th>
+            <th>Status</th>
+            <th>Turno</th>
+            <th>Turma</th>
+            <th>Equipe de Manutencao</th>
+            <th>Inicio</th>
+            <th>Fim</th>
+            <th>Duracao</th>
+            <th>Cadastro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {registrosTurnoAtivo.map((item) => (
+            <tr key={item.idHistorico}>
+              <td data-label="Painel">{item.nome || '-'}</td>
+              <td data-label="Status">{item.status || '-'}</td>
+              <td data-label="Turno">{item.turno || '-'}</td>
+              <td data-label="Turma">{item.turma || '-'}</td>
+              <td data-label="Equipe de Manutencao">{item.causa || '-'}</td>
+              <td data-label="Inicio">{item.horaInicio || '-'}</td>
+              <td data-label="Fim">{item.horaFim || '-'}</td>
+              <td data-label="Duracao">{formatMinutes(getDurationInMinutes(item))}</td>
+              <td data-label="Cadastro">{item.dataHoraCadastro || item.dataHoraRegistro || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {registrosTurnoAtivo.length === 0 && (
+        <div className="empty-state">Nenhuma parada registrada para o turno {turnoAtivo}.</div>
+      )}
+    </main>
+  );
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<DashboardPage />} />
       <Route path="/historico" element={<HistoricoPage />} />
       <Route path="/relatorio" element={<RelatorioPage />} />
+      <Route path="/relatorio-turnos" element={<RelatorioPorTurnoPage />} />
       <Route path="/historico-opcoes" element={<HistoricoOpcoesPage />} />
+      <Route path="/dashboard-turnos" element={<DashboardTurnosPage />} />
     </Routes>
   );
 }

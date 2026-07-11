@@ -5,6 +5,14 @@ eu jovem # Banco de Dados para Vercel (Supabase)
 2. Abra o SQL Editor.
 3. Execute o script em `supabase/schema.sql`.
 
+### Atualizacao para quem ja tinha banco criado
+Se sua tabela `app_state` ja existia antes, execute tambem este SQL:
+
+```sql
+alter table public.app_state
+   add column if not exists relatorio_turnos_notas jsonb not null default '{}'::jsonb;
+```
+
 ## 2. Configurar variaveis no projeto React
 1. Copie `.env.example` para `.env` no ambiente local.
 2. Preencha:

@@ -26,14 +26,24 @@ const supabase = hasRemoteConfig
 function getEmptyState() {
   return {
     equipamentos: [],
-    historicoParadas: []
+    historicoParadas: [],
+    relatorioTurnosNotas: {}
   };
+}
+
+function cloneRelatorioTurnosNotas(notas) {
+  if (!notas || typeof notas !== 'object' || Array.isArray(notas)) {
+    return {};
+  }
+
+  return { ...notas };
 }
 
 function cloneState(state) {
   return {
     equipamentos: Array.isArray(state?.equipamentos) ? [...state.equipamentos] : [],
-    historicoParadas: Array.isArray(state?.historicoParadas) ? [...state.historicoParadas] : []
+    historicoParadas: Array.isArray(state?.historicoParadas) ? [...state.historicoParadas] : [],
+    relatorioTurnosNotas: cloneRelatorioTurnosNotas(state?.relatorioTurnosNotas)
   };
 }
 
@@ -66,7 +76,7 @@ export async function getState() {
   try {
     const { data, error } = await supabase
       .from(TABLE_NAME)
-      .select('equipamentos, historico_paradas')
+      .select('equipamentos, historico_paradas, relatorio_turnos_notas')
       .eq('id', STATE_ID)
       .maybeSingle();
 
@@ -82,7 +92,8 @@ export async function getState() {
 
     const remoteState = cloneState({
       equipamentos: data.equipamentos,
-      historicoParadas: data.historico_paradas
+      historicoParadas: data.historico_paradas,
+      relatorioTurnosNotas: data.relatorio_turnos_notas
     });
 
     writeLocalState(remoteState);
@@ -106,7 +117,8 @@ export async function saveState(state) {
       .upsert({
         id: STATE_ID,
         equipamentos: safeState.equipamentos,
-        historico_paradas: safeState.historicoParadas
+        historico_paradas: safeState.historicoParadas,
+        relatorio_turnos_notas: safeState.relatorioTurnosNotas
       });
 
     if (error) {
@@ -122,5 +134,16 @@ export async function saveState(state) {
 export async function saveHistoricoParadas(historicoParadas) {
   const current = await getState();
   current.historicoParadas = Array.isArray(historicoParadas) ? [...historicoParadas] : [];
+  return saveState(current);
+}
+
+export async function getRelatorioTurnosNotas() {
+  const current = await getState();
+  return cloneRelatorioTurnosNotas(current.relatorioTurnosNotas);
+}
+
+export async function saveRelatorioTurnosNotas(notas) {
+  const current = await getState();
+  current.relatorioTurnosNotas = cloneRelatorioTurnosNotas(notas);
   return saveState(current);
 }

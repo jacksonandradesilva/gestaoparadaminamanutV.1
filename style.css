@@ -50,8 +50,29 @@ h2 {
 	margin-bottom: 20px;
 }
 
+.dashboard-filter-bar {
+	max-width: 220px;
+}
+
 .summary-cards {
 	margin-top: 20px;
+}
+
+.turno-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin-bottom: 18px;
+}
+
+.turno-tab-btn {
+	background: #d9e2ec;
+	color: #243b53;
+}
+
+.turno-tab-btn.active {
+	background: #136f63;
+	color: #ffffff;
 }
 
 .btn-link,
