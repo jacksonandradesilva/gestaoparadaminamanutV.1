@@ -269,6 +269,16 @@ tbody tr:nth-child(even) {
 	color: #52606d;
 }
 
+.page-footer {
+	margin-top: 28px;
+	padding-top: 16px;
+	border-top: 1px solid #d9e2ec;
+	text-align: center;
+	font-size: 14px;
+	font-weight: 600;
+	color: #52606d;
+}
+
 @media (max-width: 768px) {
 	body {
 		padding: 16px;

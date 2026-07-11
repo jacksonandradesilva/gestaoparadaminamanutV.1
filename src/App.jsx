@@ -4,7 +4,7 @@ import { getRelatorioTurnosNotas, getState, saveHistoricoParadas, saveRelatorioT
 import { formatDateTime, formatMinutes, getDurationInMinutes } from './utils';
 
 const HISTORICO_OBSERVACOES_KEY = 'mina_historico_observacoes_v1';
-const OBSERVACOES_STORAGE_KEY = 'mina_relatorio_observacoes_turno_v1';
+const TURNOS = ['A', 'B', 'C', 'D'];
 
 function LinkButton({ to, children }) {
   return (
@@ -25,6 +25,10 @@ function Header({ title }) {
       <img className="page-header-logo" src="/img/logo-header (1).png" alt="Logo" />
     </div>
   );
+}
+
+function PageFooter() {
+  return <footer className="page-footer">Criado por: Jackson A. Silva</footer>;
 }
 
 function DashboardPage() {
@@ -114,9 +118,10 @@ function DashboardPage() {
 
     const nextId = equipamentos.length > 0 ? Math.max(...equipamentos.map((item) => item.id || 0)) + 1 : 1;
     const dataHoraCadastro = formatDateTime(new Date());
+    const equipamentoAtual = editandoIndex !== null ? equipamentos[editandoIndex] : null;
 
     const equipamentoObj = {
-      id: editandoIndex !== null ? equipamentos[editandoIndex].id : nextId,
+      id: equipamentoAtual?.id ?? nextId,
       nome: formData.nome.trim(),
       status: formData.status,
       turno: formData.turno,
@@ -124,7 +129,7 @@ function DashboardPage() {
       causa: formData.causa.trim(),
       horaInicio: formData.horaInicio,
       horaFim: formData.horaFim,
-      dataHoraCadastro
+      dataHoraCadastro: equipamentoAtual?.dataHoraCadastro || dataHoraCadastro
     };
 
     let nextEquipamentos = [...equipamentos];
@@ -174,7 +179,6 @@ function DashboardPage() {
 
       <div className="top-actions">
         <LinkButton to="/historico">Ver Gestao de Parada da Manutencao</LinkButton>
-        <LinkButton to="/relatorio">Relatorio de Parada</LinkButton>
         <LinkButton to="/relatorio-turnos">Relatorio por Turno</LinkButton>
         <LinkButton to="/historico-opcoes">Historico por Opcao</LinkButton>
         <LinkButton to="/dashboard-turnos">Dashboard por Turno</LinkButton>
@@ -235,6 +239,7 @@ function DashboardPage() {
             <option value="B">B</option>
             <option value="C">C</option>
             <option value="D">D</option>
+            <option value="E">E</option>
           </select>
         </div>
 
@@ -310,6 +315,8 @@ function DashboardPage() {
           ))}
         </tbody>
       </table>
+
+      <PageFooter />
     </main>
   );
 }
@@ -472,6 +479,7 @@ function HistoricoPage() {
               <option value="B">B</option>
               <option value="C">C</option>
               <option value="D">D</option>
+              <option value="E">E</option>
             </select>
           </div>
           <div className="form-field form-field-wide">
@@ -571,182 +579,8 @@ function HistoricoPage() {
       </table>
 
       {historicoParadas.length === 0 && <div className="empty-state">Nenhuma parada registrada.</div>}
-    </main>
-  );
-}
 
-function RelatorioPage() {
-  const [historicoParadas, setHistoricoParadas] = useState([]);
-  const [turno, setTurno] = useState('A');
-  const [turma, setTurma] = useState('A');
-  const [liderTecnico, setLiderTecnico] = useState('');
-  const [supervisor, setSupervisor] = useState('');
-  const [equipeManutencao, setEquipeManutencao] = useState('');
-  const [observacao, setObservacao] = useState('');
-
-  const tempoTotal = useMemo(() => {
-    const totalMin = historicoParadas.reduce((total, item) => total + getDurationInMinutes(item), 0);
-    return formatMinutes(totalMin);
-  }, [historicoParadas]);
-
-  function getObservacoesTurno() {
-    try {
-      const raw = window.localStorage.getItem(OBSERVACOES_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
-  function getObservacaoKey(currentTurno, currentTurma) {
-    return `${currentTurno}_${currentTurma}`;
-  }
-
-  function carregarObservacao(turnoValue, turmaValue) {
-    const observacoes = getObservacoesTurno();
-    const key = getObservacaoKey(turnoValue, turmaValue);
-    const registro = observacoes[key] || {};
-
-    if (typeof registro === 'string') {
-      setObservacao(registro);
-      setLiderTecnico('');
-      setSupervisor('');
-      setEquipeManutencao('');
-      return;
-    }
-
-    setObservacao(registro.texto || '');
-    setLiderTecnico(registro.liderTecnico || '');
-    setSupervisor(registro.supervisor || '');
-    setEquipeManutencao(registro.equipeManutencao || '');
-  }
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadRelatorio() {
-      const state = await getState();
-      if (!active) {
-        return;
-      }
-
-      setHistoricoParadas(Array.isArray(state.historicoParadas) ? state.historicoParadas : []);
-      carregarObservacao('A', 'A');
-    }
-
-    loadRelatorio();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    carregarObservacao(turno, turma);
-  }, [turno, turma]);
-
-  function salvarObservacao(event) {
-    event.preventDefault();
-    const observacoes = getObservacoesTurno();
-    const key = getObservacaoKey(turno, turma);
-
-    observacoes[key] = {
-      texto: observacao.trim(),
-      liderTecnico: liderTecnico.trim(),
-      supervisor: supervisor.trim(),
-      equipeManutencao: equipeManutencao.trim()
-    };
-
-    window.localStorage.setItem(OBSERVACOES_STORAGE_KEY, JSON.stringify(observacoes));
-    window.alert('Observacao do turno/turma salva com sucesso.');
-  }
-
-  return (
-    <main className="page-shell">
-      <Header title="Relatorio de Parada Manutencao Mina" />
-
-      <div className="page-actions">
-        <LinkButton to="/">Voltar ao painel</LinkButton>
-      </div>
-
-      <form onSubmit={salvarObservacao}>
-        <div className="form-field">
-          <label>Turno</label>
-          <select value={turno} onChange={(event) => setTurno(event.target.value)} required>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
-          </select>
-        </div>
-        <div className="form-field">
-          <label>Turma</label>
-          <select value={turma} onChange={(event) => setTurma(event.target.value)} required>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
-          </select>
-        </div>
-        <div className="form-field form-field-wide">
-          <label>Lider Tecnico</label>
-          <input value={liderTecnico} onChange={(event) => setLiderTecnico(event.target.value)} />
-        </div>
-        <div className="form-field form-field-wide">
-          <label>Nome do Supervisor</label>
-          <input value={supervisor} onChange={(event) => setSupervisor(event.target.value)} />
-        </div>
-        <div className="form-field form-field-wide">
-          <label>Equipe de Manutencao</label>
-          <input value={equipeManutencao} onChange={(event) => setEquipeManutencao(event.target.value)} />
-        </div>
-        <div className="form-field form-field-wide">
-          <label>Observacao do turno</label>
-          <textarea rows="3" value={observacao} onChange={(event) => setObservacao(event.target.value)} />
-        </div>
-        <div className="form-actions">
-          <button type="submit">Salvar observacao</button>
-        </div>
-      </form>
-
-      <section className="summary-cards">
-        <article className="card">
-          <span>Tempo total de parada (Gestao de Parada da Manutencao)</span>
-          <strong>{tempoTotal}</strong>
-        </article>
-      </section>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Painel</th>
-            <th>Status</th>
-            <th>Turno</th>
-            <th>Turma</th>
-            <th>Equipe de Manutencao</th>
-            <th>Inicio</th>
-            <th>Fim</th>
-            <th>Cadastro</th>
-          </tr>
-        </thead>
-        <tbody>
-          {historicoParadas.map((item) => (
-            <tr key={item.idHistorico}>
-              <td data-label="Painel">{item.nome || '-'}</td>
-              <td data-label="Status">{item.status || '-'}</td>
-              <td data-label="Turno">{item.turno || '-'}</td>
-              <td data-label="Turma">{item.turma || '-'}</td>
-              <td data-label="Equipe de Manutencao">{item.causa || '-'}</td>
-              <td data-label="Inicio">{item.horaInicio || '-'}</td>
-              <td data-label="Fim">{item.horaFim || '-'}</td>
-              <td data-label="Cadastro">{item.dataHoraCadastro || item.dataHoraRegistro || '-'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {historicoParadas.length === 0 && <div className="empty-state">Nenhuma parada registrada.</div>}
+      <PageFooter />
     </main>
   );
 }
@@ -790,9 +624,9 @@ function HistoricoOpcoesPage() {
   }, [filtroNome, filtroStatus, filtroTurno, filtroTurma, historicoCompleto]);
 
   const totalHorarioFiltrado = useMemo(() => {
-    const totalMin = historicoCompleto.reduce((total, item) => total + getDurationInMinutes(item), 0);
+    const totalMin = filtrados.reduce((total, item) => total + getDurationInMinutes(item), 0);
     return formatMinutes(totalMin);
-  }, [historicoCompleto]);
+  }, [filtrados]);
 
   const totalHorarioPainel = useMemo(() => {
     const nome = filtroNome.trim().toLowerCase();
@@ -800,10 +634,9 @@ function HistoricoOpcoesPage() {
       return '00:00';
     }
 
-    const itensDoPainel = historicoCompleto.filter((item) => (item.nome || '').toLowerCase().includes(nome));
-    const totalMin = itensDoPainel.reduce((total, item) => total + getDurationInMinutes(item), 0);
+    const totalMin = filtrados.reduce((total, item) => total + getDurationInMinutes(item), 0);
     return formatMinutes(totalMin);
-  }, [filtroNome, historicoCompleto]);
+  }, [filtroNome, filtrados]);
 
   return (
     <main className="page-shell">
@@ -839,6 +672,7 @@ function HistoricoOpcoesPage() {
           <option value="B">B</option>
           <option value="C">C</option>
           <option value="D">D</option>
+          <option value="E">E</option>
         </select>
       </section>
 
@@ -883,6 +717,8 @@ function HistoricoOpcoesPage() {
       </table>
 
       {filtrados.length === 0 && <div className="empty-state">Nenhum item encontrado para o filtro atual.</div>}
+
+      <PageFooter />
     </main>
   );
 }
@@ -910,7 +746,7 @@ function DashboardTurnosPage() {
     };
   }, []);
 
-  const turnos = ['A', 'B', 'C', 'D'];
+  const turnos = TURNOS;
 
   const resumoTurnos = useMemo(() => {
     const base = turnos.reduce((acc, turno) => {
@@ -1025,6 +861,8 @@ function DashboardTurnosPage() {
       </table>
 
       {itensFiltrados.length === 0 && <div className="empty-state">Nenhuma parada registrada para o filtro atual.</div>}
+
+      <PageFooter />
     </main>
   );
 }
@@ -1034,6 +872,7 @@ function RelatorioPorTurnoPage() {
   const [turnoAtivo, setTurnoAtivo] = useState('A');
   const [notasTurno, setNotasTurno] = useState({});
   const [turmaOpcional, setTurmaOpcional] = useState('A');
+  const [dataHorarioRelatorio, setDataHorarioRelatorio] = useState('');
   const [liderTecnico, setLiderTecnico] = useState('');
   const [supervisor, setSupervisor] = useState('');
   const [equipeManutencao, setEquipeManutencao] = useState('');
@@ -1066,6 +905,7 @@ function RelatorioPorTurnoPage() {
   function carregarNotasDoTurno(turno, notas) {
     const registro = notas[turno] || {};
     setTurmaOpcional(registro.turmaOpcional || 'A');
+    setDataHorarioRelatorio(registro.dataHorarioRelatorio || '');
     setLiderTecnico(registro.liderTecnico || '');
     setSupervisor(registro.supervisor || '');
     setEquipeManutencao(registro.equipeManutencao || '');
@@ -1082,11 +922,12 @@ function RelatorioPorTurnoPage() {
     const nextNotas = {
       ...notasTurno,
       [turnoAtivo]: {
-      turmaOpcional,
-      liderTecnico: liderTecnico.trim(),
-      supervisor: supervisor.trim(),
-      equipeManutencao: equipeManutencao.trim(),
-      breveRelato: breveRelato.trim()
+        turmaOpcional,
+        dataHorarioRelatorio,
+        liderTecnico: liderTecnico.trim(),
+        supervisor: supervisor.trim(),
+        equipeManutencao: equipeManutencao.trim(),
+        breveRelato: breveRelato.trim()
       }
     };
 
@@ -1102,6 +943,7 @@ function RelatorioPorTurnoPage() {
     setNotasTurno(nextNotas);
     await saveRelatorioTurnosNotas(nextNotas);
     setTurmaOpcional('A');
+    setDataHorarioRelatorio('');
     setLiderTecnico('');
     setSupervisor('');
     setEquipeManutencao('');
@@ -1109,7 +951,7 @@ function RelatorioPorTurnoPage() {
     window.alert(`Informacoes do turno ${turnoAtivo} removidas.`);
   }
 
-  const turnos = ['A', 'B', 'C', 'D'];
+  const turnos = TURNOS;
 
   const resumoPorTurno = useMemo(() => {
     const base = {
@@ -1166,6 +1008,14 @@ function RelatorioPorTurnoPage() {
             <option value="D">D</option>
             <option value="E">E</option>
           </select>
+        </div>
+        <div className="form-field">
+          <label>Data e Horario do Relatorio</label>
+          <input
+            type="datetime-local"
+            value={dataHorarioRelatorio}
+            onChange={(event) => setDataHorarioRelatorio(event.target.value)}
+          />
         </div>
         <div className="form-field form-field-wide">
           <label>Lider Tecnico</label>
@@ -1251,6 +1101,8 @@ function RelatorioPorTurnoPage() {
       {registrosTurnoAtivo.length === 0 && (
         <div className="empty-state">Nenhuma parada registrada para o turno {turnoAtivo}.</div>
       )}
+
+      <PageFooter />
     </main>
   );
 }
@@ -1260,7 +1112,6 @@ export default function App() {
     <Routes>
       <Route path="/" element={<DashboardPage />} />
       <Route path="/historico" element={<HistoricoPage />} />
-      <Route path="/relatorio" element={<RelatorioPage />} />
       <Route path="/relatorio-turnos" element={<RelatorioPorTurnoPage />} />
       <Route path="/historico-opcoes" element={<HistoricoOpcoesPage />} />
       <Route path="/dashboard-turnos" element={<DashboardTurnosPage />} />
